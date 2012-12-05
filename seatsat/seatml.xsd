@@ -40,6 +40,8 @@
       <xs:sequence>
         <xs:element minOccurs="1" maxOccurs="unbounded" ref="key"/>
         <xs:element minOccurs="0" maxOccurs="unbounded" ref="command"/>
+        <xs:element minOccurs="0" maxOccurs="unbounded" ref="shell"/>
+        <xs:element minOccurs="0" maxOccurs="unbounded" ref="script"/>
         <xs:element minOccurs="0" maxOccurs="1" ref="statetransition"/>
         <xs:element minOccurs="0" maxOccurs="unbounded" ref="log"/>
       </xs:sequence>
@@ -75,6 +77,24 @@
       <xs:simpleContent>
         <xs:extension base="xs:string">
           <xs:attribute name="host" use="required" type="xs:string"/>
+        </xs:extension>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="shell">
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="xs:string">
+          <xs:attribute name="host" use="optional" type="xs:string"/>
+        </xs:extension>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="script">
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="xs:string">
+          <xs:attribute name="host" use="optional" type="xs:string"/>
         </xs:extension>
       </xs:simpleContent>
     </xs:complexType>

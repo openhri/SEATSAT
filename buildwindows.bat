@@ -1,3 +1,5 @@
+mkdir dist
+
 rmdir /S /Q dist
 rmdir /S /Q build
 \Python26\python.exe setup.py py2exe

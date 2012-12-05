@@ -205,7 +205,9 @@ class SEAT(OpenRTM_aist.DataFlowComponentBase):
         try:
             if isinstance(data, RTC.TimedString):
                 data.data = data.data.decode('utf-8')
-            self.processResult(name, data.data)
+                self.processResult(name, data.data)
+            else:
+                self.processNonString(name, data.data)
         except:
             self._logger.RTC_ERROR(traceback.format_exc())
 
@@ -259,6 +261,16 @@ class SEAT(OpenRTM_aist.DataFlowComponentBase):
             return False
         for c in cmds:
             self.activateCommand(c)
+        return True
+
+    def processNonString(self, host, s):
+        self._logger.RTC_INFO("got input from %s" %  (host,))
+        cmds = self.lookupwithdefault(self.currentstate, host, host)
+        if not cmds:
+            self._logger.RTC_INFO("no command found")
+            return False
+        for c in cmds:
+            self.activateCommandEx(c, s)
         return True
 
     def lookupwithdefault(self, state, host, s):
@@ -329,6 +341,93 @@ class SEAT(OpenRTM_aist.DataFlowComponentBase):
         elif c[0] == 'l':
             data = c[1]
             self._logger.RTC_INFO(data)
+        elif c[0] == 'x':
+            host = c[1]
+            data = c[2]
+            res = os.system(data)
+            try:
+                ad = self.adaptors[host]
+                ad.send(host, res)
+            except KeyError:
+                try:
+                    self._logger.RTC_ERROR("no such adaptor:" + host)
+                except:
+                    self._logger.RTC_ERROR("no such adaptor for shell:")
+
+        elif c[0] == 's':
+            rtc_result = None
+            host = c[1]
+            data = c[2]
+            exec(data)
+            if rtc_result == None :
+              pass
+            else:
+                try:
+                    ad = self.adaptors[host]
+                    ad.send(host, rtc_result)
+                except KeyError:
+                    try:
+                        self._logger.RTC_ERROR("no such adaptor:" + host)
+                    except:
+                        self._logger.RTC_ERROR("no such adaptor for script:")
+
+    def activateCommandEx(self, c, s):
+        if c[0] == 'c':
+            host = c[1]
+            data = c[2]
+            try:
+                ad = self.adaptors[host]
+                ad.send(host, data)
+            except KeyError:
+                self._logger.RTC_ERROR("no such adaptor:" + host)
+        elif c[0] == 't':
+            func = c[1]
+            data = c[2]
+            if (func == "push"):
+                self.statestack.append(self.currentstate)
+                self.stateTransfer(data)
+            elif (func == "pop"):
+                if self.statestack.__len__() == 0:
+                    self._logger.RTC_WARN("state buffer is empty")
+                    return
+                self.stateTransfer(self.statestack.pop())
+            else:
+                self._logger.RTC_INFO("state transition from "+self.currentstate+" to "+data)
+                self.stateTransfer(data)
+        elif c[0] == 'l':
+            data = c[1]
+            self._logger.RTC_INFO(data)
+        elif c[0] == 'x':
+            host = c[1]
+            data = c[2]
+            res = os.system(data)
+            try:
+                ad = self.adaptors[host]
+                ad.send(host, res)
+            except KeyError:
+                try:
+                    self._logger.RTC_ERROR("no such adaptor:" + host)
+                except:
+                    self._logger.RTC_ERROR("no such adaptor for shell:")
+
+        elif c[0] == 's':
+            rtc_result = None
+            host = c[1]
+            data = c[2]
+            rtc_in_data = s
+            exec(data)
+            if rtc_result == None :
+              pass
+            else:
+                try:
+                    ad = self.adaptors[host]
+                    ad.send(host, rtc_result)
+                except KeyError:
+                    try:
+                        self._logger.RTC_ERROR("no such adaptor:" + host)
+                    except:
+                        self._logger.RTC_ERROR("no such adaptor for script:")
+
 
     def getDataType(self, s):
         if len(s) == 0:
@@ -368,6 +467,14 @@ class SEAT(OpenRTM_aist.DataFlowComponentBase):
         for c in r.findall('log'): # get statetransition (as command)
             data = c.text
             commands.append(['l', data])
+        for c in r.findall('shell'): # get shell (as command)
+            func = c.get('host')
+            data = c.text
+            commands.append(['x', func, data])
+        for c in r.findall('script'): # get script (as command)
+            func = c.get('host')
+            data = c.text
+            commands.append(['s', func, data])
         return commands
 
     def loadSEATML(self, files):
