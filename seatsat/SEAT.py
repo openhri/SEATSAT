@@ -188,6 +188,9 @@ class SEAT(OpenRTM_aist.DataFlowComponentBase):
                     a.join()
         except:
             self._logger.RTC_ERROR(traceback.format_exc())
+        if self.gui_flag:
+            self.root.quit()
+
         return RTC.RTC_OK
 
     def scriptfileTrans(self, _type, _str): 
@@ -361,8 +364,9 @@ class SEAT(OpenRTM_aist.DataFlowComponentBase):
                 self.stateTransfer(self.statestack.pop())
             else:
                 self._logger.RTC_INFO("state transition from "+self.currentstate+" to "+data)
-                self.hide_frame(self.currentstate)
-                self.show_frame(data)
+                if self.gui_flag:
+                    self.hide_frame(self.currentstate)
+                    self.show_frame(data)
                 self.stateTransfer(data)
         elif c[0] == 'l':
             data = c[1]
