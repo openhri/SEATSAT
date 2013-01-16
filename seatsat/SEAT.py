@@ -30,10 +30,11 @@ import RTC
 from lxml import etree
 from BeautifulSoup import BeautifulSoup
 
-from Tkinter import *
 
 from seatsat.__init__ import __version__
 from seatsat import utils
+from seatsat.mtTkinter import *
+
 try:
     import gettext
     _ = gettext.translation(domain='seatsat', localedir=os.path.dirname(__file__)+'/../share/locale').ugettext
@@ -667,17 +668,23 @@ class SEAT(OpenRTM_aist.DataFlowComponentBase):
         btn = Button(frame, text=name, command=self.mkcallback(name) )
         return btn
 
+    def create_label(self, frame, name):
+        lbl = Label(frame, text=name )
+        return lbl
+
     def pack_buttons(self, name):
         n=10
         if self.gui_buttons[name] :
            i=0
-           j=0
+           j=1
            for b in self.gui_buttons[name] :
                if ( i % 10 ) == 0:
                    j += 1
                b.grid(row=j, column=i, sticky=W + E)
                i = (i+1) % 10
 
+    def pack_item(self, item, i, j):
+        item.grid(row=j, column=i, sticky=W + E)
 
     def show_frame(self, name):
         if self.frames[name] :
@@ -691,6 +698,8 @@ class SEAT(OpenRTM_aist.DataFlowComponentBase):
         if name:
            buttons = self.buttons[name]
            self.gui_buttons[name] = []
+           self.pack_item(self.create_label(self.frames[name], name), 0, 0)
+
            for b in buttons:
                self.gui_buttons[name].append( self.create_button(self.frames[name],b))
            self.pack_buttons(name)
