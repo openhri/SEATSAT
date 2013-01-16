@@ -29,6 +29,9 @@ import OpenRTM_aist
 import RTC
 from lxml import etree
 from BeautifulSoup import BeautifulSoup
+
+from Tkinter import *
+
 from seatsat.__init__ import __version__
 from seatsat import utils
 try:
@@ -68,7 +71,7 @@ class SocketAdaptor(threading.Thread):
                     self.socket.settimeout(1)
                     self.connected = True
                 except socket.error:
-                    print "reconnect error"
+                    print "reconnect error in ", self.name
                     time.sleep(1)
                 except:
                     print traceback.format_exc()
@@ -80,9 +83,9 @@ class SocketAdaptor(threading.Thread):
                 except socket.timeout:
                     pass
                 except socket.error:
-                    print traceback.format_exc()
                     self.socket.close()
                     self.connected = False
+                    print traceback.format_exc()
                 except:
                     print traceback.format_exc()
 
@@ -98,15 +101,17 @@ class SocketAdaptor(threading.Thread):
                 self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 self.socket.connect((self.host, self.port))
                 self.connected = True
+                print "connect socket"
             except socket.error:
                 print "cannot connect"
         if self.connected == True:
             try:
-                self.socket.sendall(msg)
+                self.socket.sendall(msg+"\n")
             except socket.error:
-                print traceback.format_exc()
+                #print traceback.format_exc()
                 self.socket.close()
                 self.connected = False
+                print traceback.format_exc()
 
 seat_spec = ["implementation_id", "SEAT",
              "type_name",         "SEAT",
@@ -157,6 +162,12 @@ class SEAT(OpenRTM_aist.DataFlowComponentBase):
         self._port = {}
         self._scriptfile = ["none"]
         self._scorelimit = [0.0]
+        self.max_score = 0
+        self.gui_flag = False
+        self.init_state = None
+        self.gui_buttons = {}
+        self.frames = {}
+        self.root = Tk()
 
     def onInitialize(self):
         OpenRTM_aist.DataFlowComponentBase.onInitialize(self)
@@ -216,7 +227,11 @@ class SEAT(OpenRTM_aist.DataFlowComponentBase):
         return RTC.RTC_OK
 
     def send(self, name, data):
-        self._logger.RTC_INFO("sending command %s (to %s)" % (data, name))
+        if isinstance(data, str) :
+            self._logger.RTC_INFO("sending command %s (to %s)" % (data, name))
+        else:
+            self._logger.RTC_INFO("sending command to %s" % (name,))
+
         dtype = self.adaptortype[name][1]
         if dtype == str:
             ndata = dtype(data.encode('utf-8'))
@@ -230,12 +245,14 @@ class SEAT(OpenRTM_aist.DataFlowComponentBase):
         self._port[name].write()
 
     def processResult(self, host, s):
+        global rtc_in_data
         try:
             s = unicode(s)
         except UnicodeDecodeError:
             s = str(s).encode('string_escape')
             s = unicode(s)
         self._logger.RTC_INFO("got input %s (%s)" % (s, host))
+
         cmds = None
         if s.count('<?xml') > 0:
             doc = BeautifulSoup(s)
@@ -243,6 +260,8 @@ class SEAT(OpenRTM_aist.DataFlowComponentBase):
                 rank = int(s['rank'])
                 score = float(s['score'])
                 text = s['text']
+                if score < self.max_score:
+                    break
                 self._logger.RTC_INFO("#%i: %s (%f)" % (rank, text, score))
                 if score < self._scorelimit[0]:
                     self._logger.RTC_INFO("[rejected] score under limit")
@@ -254,11 +273,15 @@ class SEAT(OpenRTM_aist.DataFlowComponentBase):
                     break
                 else:
                     self._logger.RTC_INFO("[rejected] no matching phrases")
+            rtc_in_data = text
         else:
             cmds = self.lookupwithdefault(self.currentstate, host, s)
+            rtc_in_data = s
+
         if not cmds:
             self._logger.RTC_INFO("no command found")
             return False
+
         for c in cmds:
             self.activateCommand(c)
         return True
@@ -274,7 +297,7 @@ class SEAT(OpenRTM_aist.DataFlowComponentBase):
         return True
 
     def lookupwithdefault(self, state, host, s):
-        self._logger.RTC_INFO('looking up... %s' % (s,))
+        self._logger.RTC_INFO('looking up...%s: %s' % (host,s,))
         cmds = self.lookupcommand(state, host, s)
         if not cmds:
             cmds = self.lookupcommand(state, 'default', s)
@@ -337,10 +360,13 @@ class SEAT(OpenRTM_aist.DataFlowComponentBase):
                 self.stateTransfer(self.statestack.pop())
             else:
                 self._logger.RTC_INFO("state transition from "+self.currentstate+" to "+data)
+                self.hide_frame(self.currentstate)
+                self.show_frame(data)
                 self.stateTransfer(data)
         elif c[0] == 'l':
             data = c[1]
             self._logger.RTC_INFO(data)
+
         elif c[0] == 'x':
             host = c[1]
             data = c[2]
@@ -349,10 +375,7 @@ class SEAT(OpenRTM_aist.DataFlowComponentBase):
                 ad = self.adaptors[host]
                 ad.send(host, res)
             except KeyError:
-                try:
-                    self._logger.RTC_ERROR("no such adaptor:" + host)
-                except:
-                    self._logger.RTC_ERROR("no such adaptor for shell:")
+                self._logger.RTC_ERROR("no such adaptor:")
 
         elif c[0] == 's':
             rtc_result = None
@@ -366,10 +389,7 @@ class SEAT(OpenRTM_aist.DataFlowComponentBase):
                     ad = self.adaptors[host]
                     ad.send(host, rtc_result)
                 except KeyError:
-                    try:
-                        self._logger.RTC_ERROR("no such adaptor:" + host)
-                    except:
-                        self._logger.RTC_ERROR("no such adaptor for script:")
+                    self._logger.RTC_ERROR("no such adaptor:")
 
     def activateCommandEx(self, c, s):
         if c[0] == 'c':
@@ -380,6 +400,7 @@ class SEAT(OpenRTM_aist.DataFlowComponentBase):
                 ad.send(host, data)
             except KeyError:
                 self._logger.RTC_ERROR("no such adaptor:" + host)
+
         elif c[0] == 't':
             func = c[1]
             data = c[2]
@@ -394,9 +415,11 @@ class SEAT(OpenRTM_aist.DataFlowComponentBase):
             else:
                 self._logger.RTC_INFO("state transition from "+self.currentstate+" to "+data)
                 self.stateTransfer(data)
+
         elif c[0] == 'l':
             data = c[1]
             self._logger.RTC_INFO(data)
+
         elif c[0] == 'x':
             host = c[1]
             data = c[2]
@@ -405,15 +428,13 @@ class SEAT(OpenRTM_aist.DataFlowComponentBase):
                 ad = self.adaptors[host]
                 ad.send(host, res)
             except KeyError:
-                try:
-                    self._logger.RTC_ERROR("no such adaptor:" + host)
-                except:
-                    self._logger.RTC_ERROR("no such adaptor for shell:")
+                self._logger.RTC_ERROR("no such adaptor:" + host)
 
         elif c[0] == 's':
             rtc_result = None
             host = c[1]
             data = c[2]
+
             rtc_in_data = s
             exec(data)
             if rtc_result == None :
@@ -423,11 +444,7 @@ class SEAT(OpenRTM_aist.DataFlowComponentBase):
                     ad = self.adaptors[host]
                     ad.send(host, rtc_result)
                 except KeyError:
-                    try:
-                        self._logger.RTC_ERROR("no such adaptor:" + host)
-                    except:
-                        self._logger.RTC_ERROR("no such adaptor for script:")
-
+                    self._logger.RTC_ERROR("no such adaptor:" + host)
 
     def getDataType(self, s):
         if len(s) == 0:
@@ -471,7 +488,7 @@ class SEAT(OpenRTM_aist.DataFlowComponentBase):
             func = c.get('host')
             data = c.text
             commands.append(['x', func, data])
-        for c in r.findall('script'): # get script (as command)
+        for c in r.findall('script'): # get shell (as command)
             func = c.get('host')
             data = c.text
             commands.append(['s', func, data])
@@ -494,6 +511,9 @@ class SEAT(OpenRTM_aist.DataFlowComponentBase):
             except AssertionError, b:
                 self._logger.RTC_ERROR(u"invalid script file: " + f + ": " + unicode(b))
                 continue
+
+            self.buttons = {}
+
             for g in doc.findall('general'):
                 for a in g.findall('agent'):
                     name = str(a.get('name'))
@@ -510,8 +530,14 @@ class SEAT(OpenRTM_aist.DataFlowComponentBase):
                         host = a.get('host')
                         port = int(a.get('port'))
                         self.adaptors[name] = SocketAdaptor(self, name, host, port)
+
             for s in doc.findall('state'):
                 name = s.get('name')
+                self.frames[name] = Frame(self.root)
+                self.buttons[name]=[]
+                if self.init_state == None:
+                    self.init_state = name
+
                 for e in s.findall('onentry'):
                     commands = self.parsecommands(e)
                     self._logger.RTC_INFO("register "+name+":::entry")
@@ -532,6 +558,8 @@ class SEAT(OpenRTM_aist.DataFlowComponentBase):
                             for w in word:
                                 self._logger.RTC_INFO("register "+name+":"+source+":"+w)
                                 self.keys[name+":"+source+":"+w] = commands # register commands to key table
+                                self.buttons[name].append(w)
+
                     for k in r.findall('regkey'): # get keys
                         try:
                             regkeys = self.regkeys[name+":default"]
@@ -539,10 +567,14 @@ class SEAT(OpenRTM_aist.DataFlowComponentBase):
                             regkeys = []
                         regkeys.append([re.compile(k.text), commands])
                         self.regkeys[name+":default"] = regkeys
+
                     for w in words:
                         self._logger.RTC_INFO("register " + name + ":default:" + w)
                         self.keys[name+":default:"+w] = commands # register commands to key table
+                        self.buttons[name].append(w)
+
                 self.states.extend([name])
+
         if len(self.states) == 0:
             self._logger.RTC_ERROR("no available state")
             return 1
@@ -625,6 +657,47 @@ class SEAT(OpenRTM_aist.DataFlowComponentBase):
             ret.extend([str])
         return ret
 
+
+    def mkcallback(self, name):
+        def __callback_func__():
+           self.processResult("gui", name)
+        return __callback_func__
+
+    def create_button(self, frame, name):
+        btn = Button(frame, text=name, command=self.mkcallback(name) )
+        return btn
+
+    def pack_buttons(self, name):
+        n=10
+        if self.gui_buttons[name] :
+           i=0
+           j=0
+           for b in self.gui_buttons[name] :
+               if ( i % 10 ) == 0:
+                   j += 1
+               b.grid(row=j, column=i, sticky=W + E)
+               i = (i+1) % 10
+
+
+    def show_frame(self, name):
+        if self.frames[name] :
+           self.frames[name].place(relx=0.0, rely=0, relwidth=1, relheight=1)
+
+    def hide_frame(self, name):
+        if self.frames[name] :
+           self.frames[name].place_forget()
+
+    def create_gui(self, name):
+        if name:
+           buttons = self.buttons[name]
+           self.gui_buttons[name] = []
+           for b in buttons:
+               self.gui_buttons[name].append( self.create_button(self.frames[name],b))
+           self.pack_buttons(name)
+
+        return 0
+
+
 class SEATManager:
     def __init__(self):
         global opts
@@ -638,6 +711,14 @@ class SEATManager:
         parser.add_option('-g', '--gui', dest='guimode', action="store_true",
                           default=False,
                           help=_('show file open dialog in GUI'))
+
+        parser.add_option('-t', '--test_mode', dest='testmode', action="store_true",
+                          default=False,
+                          help=_('show GUI panel for test'))
+
+        parser.add_option('-s', type='float', nargs=1, dest='maxscore',
+                          default=0.0,
+                          help=_('max_score for voice recognition'))
         try:
             opts, args = parser.parse_args()
         except optparse.OptionError, e:
@@ -661,7 +742,14 @@ class SEATManager:
 
     def start(self):
         global opts
-        self.manager.runManager(False)
+        if opts.testmode:
+            self.manager.runManager(True)
+            for st in self.comp.states:
+                self.comp.create_gui(st)
+            self.comp.show_frame(self.comp.init_state)
+            self.comp.root.mainloop()
+        else:
+            self.manager.runManager(False)
         #if opts.guimode == True:
         #    raw_input("Press Enter to Exit")
 
@@ -669,6 +757,9 @@ class SEATManager:
         profile = OpenRTM_aist.Properties(defaults_str=seat_spec)
         manager.registerFactory(profile, SEAT, OpenRTM_aist.Delete)
         self.comp = manager.createComponent("SEAT?exec_cxt.periodic.rate=1")
+        if opts.testmode == True:
+            self.comp.gui_flag = True
+        self.comp.max_score = opts.maxscore
         ret = self.comp.loadSEATML(self._scriptfiles)
         if ret != 0:
             print >>sys.stderr, 'Unable to load script file: see log file for details...'
