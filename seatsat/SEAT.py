@@ -9,8 +9,9 @@ Copyright (C) 2009-2010
     National Institute of Advanced Industrial Science and Technology (AIST),
     Japan
     All rights reserved.
-Licensed under the Eclipse Public License -v 1.0 (EPL)
-http://www.opensource.org/licenses/eclipse-1.0.txt
+Licensed under the GNU General Public License, version 2 (GPL-2.0)
+
+http://opensource.org/licenses/gpl-2.0.php
 '''
 
 import sys
@@ -168,6 +169,8 @@ class SEAT(OpenRTM_aist.DataFlowComponentBase):
         self.init_state = None
         self.gui_buttons = {}
         self.frames = {}
+        self.selected_button = None
+        self.max_columns=10
         self.root = Tk()
 
     def onInitialize(self):
@@ -188,9 +191,9 @@ class SEAT(OpenRTM_aist.DataFlowComponentBase):
                     a.join()
         except:
             self._logger.RTC_ERROR(traceback.format_exc())
+
         if self.gui_flag:
             self.root.quit()
-
         return RTC.RTC_OK
 
     def scriptfileTrans(self, _type, _str): 
@@ -274,6 +277,7 @@ class SEAT(OpenRTM_aist.DataFlowComponentBase):
                 if not cmds:
                     cmds = self.lookupwithdefault(self.currentstate, host, text)
                 if cmds:
+                    self.change_color(s, '#ffff00')
                     break
                 else:
                     self._logger.RTC_INFO("[rejected] no matching phrases")
@@ -281,10 +285,12 @@ class SEAT(OpenRTM_aist.DataFlowComponentBase):
         else:
             cmds = self.lookupwithdefault(self.currentstate, host, s)
             rtc_in_data = s
-
+            self.change_color(s, '#ff0000')
         if not cmds:
             self._logger.RTC_INFO("no command found")
             return False
+
+
 
         for c in cmds:
             self.activateCommand(c)
@@ -351,6 +357,7 @@ class SEAT(OpenRTM_aist.DataFlowComponentBase):
                 ad.send(host, data)
             except KeyError:
                 self._logger.RTC_ERROR("no such adaptor:" + host)
+
         elif c[0] == 't':
             func = c[1]
             data = c[2]
@@ -364,10 +371,9 @@ class SEAT(OpenRTM_aist.DataFlowComponentBase):
                 self.stateTransfer(self.statestack.pop())
             else:
                 self._logger.RTC_INFO("state transition from "+self.currentstate+" to "+data)
-                if self.gui_flag:
-                    self.hide_frame(self.currentstate)
-                    self.show_frame(data)
+                self.change_frame(data)
                 self.stateTransfer(data)
+
         elif c[0] == 'l':
             data = c[1]
             self._logger.RTC_INFO(data)
@@ -669,7 +675,7 @@ class SEAT(OpenRTM_aist.DataFlowComponentBase):
         return __callback_func__
 
     def create_button(self, frame, name):
-        btn = Button(frame, text=name, command=self.mkcallback(name) )
+        btn = Button(frame, text=name, command=self.mkcallback(name), bg="#eeeeee")
         return btn
 
     def create_label(self, frame, name):
@@ -677,15 +683,15 @@ class SEAT(OpenRTM_aist.DataFlowComponentBase):
         return lbl
 
     def pack_buttons(self, name):
-        n=10
+        n=self.max_columns
         if self.gui_buttons[name] :
            i=0
            j=1
            for b in self.gui_buttons[name] :
-               if ( i % 10 ) == 0:
+               if ( i % self.max_columns ) == 0:
                    j += 1
                b.grid(row=j, column=i, sticky=W + E)
-               i = (i+1) % 10
+               i = (i+1) % self.max_columns
 
     def pack_item(self, item, i, j):
         item.grid(row=j, column=i, sticky=W + E)
@@ -697,6 +703,26 @@ class SEAT(OpenRTM_aist.DataFlowComponentBase):
     def hide_frame(self, name):
         if self.frames[name] :
            self.frames[name].place_forget()
+
+    def change_frame(self, name):
+        if self.gui_flag:
+           self.hide_frame(self.currentstate)
+           self.show_frame(name)
+
+    def change_color(self, name, color):
+        if self.gui_flag:
+            btn = self.find_button(name)
+            if btn :
+                if self.selected_button :
+                    self.selected_button.configure(bg="#eeeeee") 
+                btn.configure(bg=color)
+                self.selected_button = btn
+
+    def find_button(self, name):
+        for btn in self.gui_buttons[self.currentstate] :
+           if btn.cget('text') == name:
+               return btn
+        return None
 
     def create_gui(self, name):
         if name:
